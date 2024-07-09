@@ -1,5 +1,5 @@
 <component name="ArtifactManager">
-  <artifact type="jar" name="LogNote">
+  <artifact type="jar" build-on-make="true" name="LogNote">
     <output-path>$PROJECT_DIR$/out/artifacts/LogNote</output-path>
     <root id="archive" name="LogNote.jar">
       <element id="module-output" name="lognote_github" />

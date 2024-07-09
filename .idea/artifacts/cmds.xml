@@ -1,0 +1,11 @@
+<component name="ArtifactManager">
+  <artifact build-on-make="true" name="cmds">
+    <output-path>$PROJECT_DIR$/out/artifacts/LogNote</output-path>
+    <root id="root">
+      <element id="dir-copy" path="$PROJECT_DIR$/cmds" />
+      <element id="directory" name="logcmds">
+        <element id="file-copy" path="$PROJECT_DIR$/logcmds/logcat_package.sh" />
+      </element>
+    </root>
+  </artifact>
+</component>
