@@ -12,7 +12,22 @@ Aging Test : Save split file by lines
 
 Kotlin + swing
 
-![lognote_light](https://user-images.githubusercontent.com/75207513/202910342-0a94a05f-9942-41f5-a35f-7fb1a90f8b3e.png)
+![Lognote_1 0_main](https://github.com/user-attachments/assets/42707659-de5b-4e81-b6f6-32cdf86e114b)
+![Lognote_1 0_open](https://github.com/user-attachments/assets/6868cd9d-a4fc-43c4-9a6e-df48ea208793)
+
+
+<br/>
+
+# Config path
+Save to the path set in the environment variable "LOGNOTE_HOME"\
+Default current path
+
+EX) After creating the directory\
+Windows : set LOGNOTE_HOME=D:\lognote\
+Linux : export LOGNOTE_HOME=\~/lognote\
+Mac : export LOGNOTE_HOME=\~/lognote
+
+
 <br/>
 
 # Run
@@ -22,9 +37,11 @@ Mac : java -Dfile.encoding=utf8 -Xmx2048m -jar LogNote.jar
 
 <br/>
 
-# Config path
-Save to the path set in the environment variable "LOGNOTE_HOME"\
-Default current path
+# How to use(tips)
+1. [Show only specific package logs - 1.0 ~ (use "Packages" menu)](https://cdcsutils.blogspot.com/2024/10/lognote-show-only-specific-package-logs.html)
+1. [Show only specific package logs - ~ 0.3.8](https://cdcsutils.blogspot.com/2024/09/lognote-show-only-specific-package-logs.html)
+1. [Add desktop shortcut in ubuntu](https://cdcsutils.blogspot.com/2024/10/lognote-setting-up-shortcut-to-re-run.html)
+1. [Make screen capture(Add button, When a specific log occurs : log trigger)](https://cdcsutils.blogspot.com/2024/12/lognote-make-screen-captureadd-button.html)
 
 <br/>
 
@@ -40,6 +57,18 @@ Default current path
    - Open recent files: set to saved view config
 1. Follow File: Continue reading logs added to the file (ex: adb logcat > a.log, File > Follow - a.log)
    - Used when you want to read the log of processing results of commands other than adb
+
+<br/>
+
+# Log view mode
+1. "Not adb mode(file open...)" or "View > Show process name > None"
+![lognote_columnX_processX](https://github.com/user-attachments/assets/9c650931-3c19-4a79-a051-0e7a86d44824)
+1. "Not adb mode(file open...)" or "View > Show process name > None" + "View > Show divided by column"
+![lognote_columnO_processX](https://github.com/user-attachments/assets/651ef0ea-cc05-46db-b8fe-ced1c525894e)
+1. "Adb mode" and "View > Show process name > Show with color bg"
+![lognote_columnX_processO](https://github.com/user-attachments/assets/692f8585-0136-41af-a3fe-df3a5df4362a)
+1. "Adb mode" and "View > Show process name > Show with color bg" + "View > Show divided by column"
+![lognote_columnO_processO](https://github.com/user-attachments/assets/9055ea48-6e7c-4b47-a026-696711b02940)
 
 <br/>
 
