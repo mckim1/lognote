@@ -675,7 +675,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
         }
     }
 
-    private fun getFgStrColor(row: Int) : String {
+    fun getFgStrColor(row: Int) : String {
         return when (mLogItems[row].mLevel) {
             LEVEL_VERBOSE -> {
                 mTableColor.mStrLogLevelVerbose
@@ -710,7 +710,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
         return null
     }
 
-    open fun getPrintValue(value: String, row: Int, col: Int, isSelected: Boolean) : String {
+    fun getPrintValue(value: String, row: Int, col: Int, isSelected: Boolean, htmlTag: Boolean) : String {
         var newValue = value
         if (newValue.indexOf("<") >= 0) {
             newValue = newValue.replace("<", "&lt;")
@@ -1051,7 +1051,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
             if (newValue == value) {
                 return ""
             }
-            stringBuilder.replace(0, newValue.length, newValue.replace(" ", "&nbsp;"))
+            stringBuilder.replace(0, newValue.length, newValue.replace("  ", " &nbsp;"))
         }
         else {
             var beforeStart = 0
@@ -1068,7 +1068,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
                         stringBuilder.replace(
                                 end,
                                 newValue.length,
-                                newValue.substring(end, newValue.length).replace(" ", "&nbsp;")
+                                newValue.substring(end, newValue.length).replace("  ", " &nbsp;")
                         )
                     }
                     isFirst = false
@@ -1077,7 +1077,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
                     stringBuilder.replace(
                             end,
                             beforeStart,
-                            newValue.substring(end, beforeStart).replace(" ", "&nbsp;")
+                            newValue.substring(end, beforeStart).replace("  ", " &nbsp;")
                     )
                 }
                 if (start >= 0 && end >= 0) {
@@ -1098,7 +1098,7 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
                     stringBuilder.replace(
                             start,
                             end,
-                            newValue.substring(start, end).replace(" ", "&nbsp;")
+                            newValue.substring(start, end).replace("  ", " &nbsp;")
                     )
                     stringBuilder.replace(
                             start,
@@ -1109,13 +1109,20 @@ open class LogTableModel(mainUI: MainUI, baseModel: LogTableModel?) : AbstractTa
                 beforeStart = start
             }
             if (beforeStart > 0) {
-                stringBuilder.replace(0, beforeStart, newValue.substring(0, beforeStart).replace(" ", "&nbsp;"))
+                stringBuilder.replace(0, beforeStart, newValue.substring(0, beforeStart).replace("  ", " &nbsp;"))
             }
         }
 
         val color = getFgStrColor(row)
-        stringBuilder.replace(0, 0, "<html><p><nobr><font color=$color>")
-        stringBuilder.append("</font></nobr></p></html>")
+        if (htmlTag) {
+            stringBuilder.replace(0, 0, "<html><p><nobr><font color=$color>")
+            stringBuilder.append("</font></nobr></p></html>")
+        }
+        else {
+            stringBuilder.replace(0, 0, "<font color=$color>")
+            stringBuilder.append("</font>")
+        }
+
         return stringBuilder.toString()
     }
 

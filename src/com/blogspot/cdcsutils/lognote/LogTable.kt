@@ -24,7 +24,7 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
     }
 
     var mTableModel = tableModel
-    private val mTableColor: ColorManager.TableColor
+    val mTableColor: ColorManager.TableColor
     private val mBookmarkManager = BookmarkManager.getInstance()
     val mMultiClickInterval = try {
         Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval").toString().toInt() + 500
@@ -373,7 +373,7 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
             col: Int
         ): Component {
             val newValue:String = if (value != null) {
-                mTableModel.getPrintValue(value.toString(), row, col, isSelected)
+                mTableModel.getPrintValue(value.toString(), row, col, isSelected, true)
             } else {
                 ""
             }
@@ -504,40 +504,60 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
         return
     }
 
-    protected open fun showSelected(targetRow:Int) {
+    open fun getLogText(row:Int): String {
+        return mTableModel.getValueAt(row, LogTableModel.COLUMN_LOG_START).toString()
+    }
+
+    fun getSelectedLog(targetRow: Int, prevLines: Int, nextLines: Int): Pair<String, Int> {
         val log = StringBuilder("")
         var caretPos = 0
         var value:String
+        var newValue:String
 
+        val rows: IntArray
         if (selectedRowCount > 1) {
-            for (row in selectedRows) {
-                value = mTableModel.getValueAt(row, LogTableModel.COLUMN_LOG_START).toString() + "\n"
-                log.append(value)
-            }
+            rows = selectedRows
         }
         else {
-            var startIdx = targetRow - 2
+            var startIdx = targetRow - prevLines
             if (startIdx < 0) {
                 startIdx = 0
             }
-            var endIdx = targetRow + 3
+            var endIdx = targetRow + nextLines + 1
             if (endIdx > rowCount) {
                 endIdx = rowCount
             }
 
-            for (idx in startIdx until endIdx) {
-                if (idx == targetRow) {
-                    caretPos = log.length
-                }
-                value = mTableModel.getValueAt(idx, LogTableModel.COLUMN_LOG_START).toString() + "\n"
-                log.append(value)
-            }
+            rows = IntArray(endIdx - startIdx) { index -> startIdx + index }
         }
 
-        val mainUI = MainUI.getInstance()
-        val logViewDialog = LogViewDialog(mainUI, log.toString().trim(), caretPos)
-        logViewDialog.setLocationRelativeTo(mainUI)
-        logViewDialog.isVisible = true
+        for (row in rows) {
+            value = getLogText(row)
+            newValue = mTableModel.getPrintValue(value, row, LogTableModel.COLUMN_LOG_START, false, false)
+            if (newValue.isEmpty()) {
+                val color = mTableModel.getFgStrColor(row)
+                newValue = "<font color=$color>$value</font>"
+            }
+            newValue += "<br>"
+            log.append(newValue)
+        }
+
+        return Pair(log.toString(), caretPos)
+    }
+
+    private fun showSelected(targetRow:Int) {
+        val toolsPane = ToolsPane.getInstance()
+        if (toolsPane.isVisible && toolsPane.isExistInTab(ToolsPane.Companion.ToolId.TOOL_ID_SELECTION)) {
+            toolsPane.showTab(ToolsPane.Companion.ToolId.TOOL_ID_SELECTION)
+        }
+        else {
+            val toolSelection = ToolsPane.getInstance().mToolSelection
+            val selectedPair = getSelectedLog(targetRow, toolSelection.mPrevLines, toolSelection.mNextLines)
+            val mainUI = MainUI.getInstance()
+            val toolSelectionDialog = ToolSelectionDialog(mainUI, selectedPair)
+            toolSelectionDialog.setLocationRelativeTo(mainUI)
+            toolSelectionDialog.isVisible = true
+        }
     }
 
     private fun updateBookmark(targetRow:Int) {
@@ -577,15 +597,27 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
 
     internal inner class PopUpTable(point: Point) : JPopupMenu() {
         var mProcessItem: JMenuItem = JMenuItem("")
-        var mCopyItem: JMenuItem = JMenuItem(Strings.COPY)
+        var mSelectedTextItem: JMenuItem = JMenuItem("")
+        var mIncludeAddItem = JMenuItem(Strings.ADD_INCLUDE)
+        var mExcludeAddItem = JMenuItem(Strings.ADD_EXCLUDE)
+        var mSearchAddItem = JMenuItem(Strings.ADD_SEARCH)
+        var mSearchSetItem = JMenuItem(Strings.SET_SEARCH)
+        var mIncludeSetItem = JMenuItem(Strings.SET_INCLUDE)
+        var mIncludeRemoveItem = JMenuItem(Strings.REMOVE_INCLUDE)
+        var mCopyLineItem: JMenuItem = JMenuItem(Strings.COPY_SELECTED_LINES)
+        var mCopyWordItem: JMenuItem = JMenuItem(Strings.COPY)
         var mShowEntireItem = JMenuItem(Strings.SHOW_ENTIRE_LINE)
         var mBookmarkItem = JMenuItem(Strings.BOOKMARK)
         var mReconnectItem = JMenuItem("${Strings.RECONNECT} - adb")
         var mStartItem = JMenuItem(Strings.START)
         var mStopItem = JMenuItem(Strings.STOP)
         var mClearItem = JMenuItem(Strings.CLEAR_VIEWS)
-//        var mClearSaveItem = JMenuItem("Clear/Save")
         private val mActionHandler = ActionHandler()
+        private val mIncludeAction: Action
+        private val mAddIncludeKey = "add_include"
+
+        private var mSelectedWord = ""
+
 
         init {
             val column: Int = columnAtPoint(point)
@@ -602,13 +634,107 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
                     }
                     mProcessItem.addActionListener(mActionHandler)
                     add(mProcessItem)
+                    addSeparator()
                 }
             }
 
-            mCopyItem.addActionListener(mActionHandler)
-            add(mCopyItem)
+            mIncludeAction = object : AbstractAction(mAddIncludeKey) {
+                override fun actionPerformed(evt: ActionEvent?) {
+                    if (evt != null) {
+                        val textSplit = evt.actionCommand.split(Regex(":"), 2)
+                        val tagText = if (textSplit.size == 2) {
+                            textSplit[1].trim()
+                        }
+                        else {
+                            ""
+                        }
+                        if (mSelectedWord.isNotEmpty()) {
+                            var comboText = MainUI.getInstance().getTextShowLogCombo()
+                            if (comboText.isNotEmpty()) {
+                                comboText += "|"
+                            }
+                            comboText += "$tagText$mSelectedWord"
+                            MainUI.getInstance().setTextShowLogCombo(comboText)
+                            MainUI.getInstance().applyShowLogCombo(true)
+                        }
+                    }
+                }
+            }
+
+            var selectedWord = ""
+            val row = rowAtPoint(point)
+            if (row in 0..<rowCount) {
+                if (!selectedRows.contains(row)) {
+                    setRowSelectionInterval(row, row)
+                }
+
+                val col = columnAtPoint(point)
+                if (col >= 0) {
+                    val renderer = getCellRenderer(row, col)
+                    val component = prepareRenderer(renderer, row, col)
+
+                    if (component is JComponent) {
+                        var columnX = 0
+                        for (i in 0 until col) {
+                            columnX += columnModel.getColumn(i).width
+                        }
+                        val text = mTableModel.getValueAt(row, col).toString()
+                        selectedWord = getWordUnderCursor(text, Point(point.x - columnX, point.y), component.getFontMetrics(component.font)).trim()
+                    }
+                }
+            }
+
+            mSelectedWord = selectedWord.trim()
+            if (mSelectedWord.isNotEmpty()) {
+                val prefix = "  - "
+                mSelectedTextItem.text = "\"$mSelectedWord\""
+                add(mSelectedTextItem)
+
+                mIncludeAddItem.text = "$prefix${Strings.ADD_INCLUDE}"
+                mIncludeAddItem.isOpaque = true
+                mIncludeAddItem.foreground = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredFGs[0])
+                mIncludeAddItem.background = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredBGs[0])
+                mIncludeAddItem.addActionListener(mIncludeAction)
+                add(mIncludeAddItem)
+                for (idx in 1..9) {
+                    val item = JMenuItem("$prefix${Strings.ADD_INCLUDE} : #$idx")
+                    item.isOpaque = true
+                    item.foreground = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredFGs[idx])
+                    item.background = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredBGs[idx])
+                    item.addActionListener(mIncludeAction)
+                    add(item)
+                }
+                mIncludeSetItem.text = "$prefix${Strings.SET_INCLUDE}"
+                mIncludeSetItem.addActionListener(mActionHandler)
+                add(mIncludeSetItem)
+                mIncludeRemoveItem.text = "$prefix${Strings.REMOVE_INCLUDE}"
+                mIncludeRemoveItem.addActionListener(mActionHandler)
+                add(mIncludeRemoveItem)
+
+                mExcludeAddItem.text = "$prefix${Strings.ADD_EXCLUDE}"
+                mExcludeAddItem.addActionListener(mActionHandler)
+                add(mExcludeAddItem)
+
+                mSearchAddItem.text = "$prefix${Strings.ADD_SEARCH}"
+                mSearchAddItem.addActionListener(mActionHandler)
+                add(mSearchAddItem)
+                mSearchSetItem.text = "$prefix${Strings.SET_SEARCH}"
+                mSearchSetItem.addActionListener(mActionHandler)
+                add(mSearchSetItem)
+
+                mCopyWordItem.text = "$prefix${Strings.COPY}"
+                mCopyWordItem.addActionListener(mActionHandler)
+                add(mCopyWordItem)
+                addSeparator()
+            }
+
+            mCopyLineItem.addActionListener(mActionHandler)
+            add(mCopyLineItem)
             mShowEntireItem.addActionListener(mActionHandler)
-            add(mShowEntireItem)
+            val toolsPane = ToolsPane.getInstance()
+            if (!toolsPane.isShowingTool(ToolsPane.Companion.ToolId.TOOL_ID_SELECTION)) {
+                add(mShowEntireItem)
+            }
             mBookmarkItem.addActionListener(mActionHandler)
             add(mBookmarkItem)
             addSeparator()
@@ -620,15 +746,81 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
             add(mStopItem)
             mClearItem.addActionListener(mActionHandler)
             add(mClearItem)
-//            mClearSaveItem.addActionListener(mActionHandler)
-//            add(mClearSaveItem)
         }
+
+        private fun getWordUnderCursor(text: String, point: Point, metrics: FontMetrics): String {
+            var ret = ""
+            try {
+                var offset = -1
+                var x = 0
+                for (i in text.indices) {
+                    x += metrics.charWidth(text[i])
+                    if (x >= point.x) {
+                        offset = i
+                        break
+                    }
+                }
+                if (offset >= 0) {
+                    var start = offset
+                    var end = offset
+                    while (start > 0 && (Character.isLetterOrDigit(text[start - 1]) || text[start - 1] == '_' || text[start - 1] == '.')) {
+                        start--
+                    }
+
+                    while (end < text.length && (Character.isLetterOrDigit(text[end]) || text[end] == '_' || text[end] == '.')) {
+                        end++
+                    }
+                    ret = text.substring(start, end)
+                }
+            } catch (ex: Exception) {
+                ex.printStackTrace()
+            }
+
+            return ret
+        }
+
         internal inner class ActionHandler : ActionListener {
             override fun actionPerformed(p0: ActionEvent?) {
                 when (p0?.source) {
-                    mCopyItem -> {
+                    mCopyLineItem -> {
                         this@LogTable.processKeyEvent(KeyEvent(this@LogTable, KeyEvent.KEY_PRESSED, p0.`when`, KeyEvent.CTRL_MASK, KeyEvent.VK_C, 'C'))
                     }
+                    mCopyWordItem -> {
+                        if (mSelectedWord.isNotEmpty()) {
+                            val sel = StringSelection(mSelectedWord)
+                            Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, null)
+                        }
+                    }
+                    mExcludeAddItem -> {
+                        if (mSelectedWord.isNotEmpty()) {
+                            var text = MainUI.getInstance().getTextShowLogCombo()
+                            text += "|-$mSelectedWord"
+                            MainUI.getInstance().setTextShowLogCombo(text)
+                            MainUI.getInstance().applyShowLogCombo(true)
+                        }
+                    }
+                    mSearchAddItem -> {
+                        if (mSelectedWord.isNotEmpty()) {
+                            var text = MainUI.getInstance().getTextSearchCombo()
+                            text += "|$mSelectedWord"
+                            MainUI.getInstance().setTextSearchCombo(text)
+                        }
+                    }
+                    mIncludeSetItem -> {
+                        if (mSelectedWord.isNotEmpty()) {
+                            MainUI.getInstance().setTextShowLogCombo(mSelectedWord)
+                            MainUI.getInstance().applyShowLogCombo(true)
+                        }
+                    }
+                    mIncludeRemoveItem -> {
+                        MainUI.getInstance().removeIncludeFilterShowLogCombo(mSelectedWord)
+                    }
+                    mSearchSetItem -> {
+                        if (mSelectedWord.isNotEmpty()) {
+                            MainUI.getInstance().setTextSearchCombo(mSelectedWord)
+                        }
+                    }
+
                     mShowEntireItem -> {
                         showSelected(selectedRow)
                     }
@@ -706,6 +898,12 @@ open class LogTable(tableModel:LogTableModel) : JTable(tableModel){
             }
 
             if (SwingUtilities.isRightMouseButton(p0)) {
+                val row = rowAtPoint(p0.point)
+                if (row in 0..<rowCount) {
+                    if (!selectedRows.contains(row)) {
+                        setRowSelectionInterval(row, row)
+                    }
+                }
                 popupMenu = PopUpTable(Point(p0.x, p0.y))
                 popupMenu?.show(p0.component, p0.x, p0.y)
             }

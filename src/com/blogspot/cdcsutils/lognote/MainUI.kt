@@ -15,6 +15,7 @@ import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
+import java.util.regex.Pattern
 import javax.swing.*
 import javax.swing.event.*
 import javax.swing.plaf.FontUIResource
@@ -28,9 +29,9 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         private const val SPLIT_WEIGHT = 0.7
 
         private const val ROTATION_LEFT_RIGHT = 0
-        private const val ROTATION_TOP_BOTTOM = 1
+        const val ROTATION_TOP_BOTTOM = 1
         private const val ROTATION_RIGHT_LEFT = 2
-        private const val ROTATION_BOTTOM_TOP = 3
+        const val ROTATION_BOTTOM_TOP = 3
         private const val ROTATION_MAX = ROTATION_BOTTOM_TOP
 
         const val DEFAULT_FONT_NAME = "DialogInput"
@@ -91,6 +92,11 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
     private var mFileSaveDir: String = ""
     private lateinit var mItemFileExit: JMenuItem
     private lateinit var mMenuView: JMenu
+    private lateinit var mItemToolWindows: JMenu
+    lateinit var mItemToolPanel: JCheckBoxMenuItem
+    lateinit var mItemToolSelection: JCheckBoxMenuItem
+    var mToolTestEnable = false
+    lateinit var mItemToolTest: JCheckBoxMenuItem
     lateinit var mItemFull: JCheckBoxMenuItem
     lateinit var mItemFullLogToNewWindow: JCheckBoxMenuItem
     private lateinit var mItemColumnMode: JCheckBoxMenuItem
@@ -109,6 +115,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
     private lateinit var mItemFilterByFile: JCheckBoxMenuItem
     private lateinit var mItemColorTagRegex: JCheckBoxMenuItem
     private lateinit var mItemAppearance: JMenuItem
+    private lateinit var mItemTool: JMenuItem
     private lateinit var mMenuHelp: JMenu
     private lateinit var mItemHelp: JMenuItem
     private lateinit var mItemCheckUpdate: JMenuItem
@@ -163,6 +170,10 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
     private lateinit var mScrollbackApplyBtn: ColorButton
     private lateinit var mScrollbackKeepToggle: ColorToggleButton
 
+    lateinit var mToolsPane: ToolsPane
+    lateinit var mToolSplitPane: JSplitPane
+    private var mToolSplitDividerLocation = -1
+    private var mToolSplitLastDividerLocation = -1
     lateinit var mLogSplitPane: JSplitPane
 
     lateinit var mFilteredLogPanel: LogPanel
@@ -208,6 +219,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
     private var mFrameExtendedState = Frame.MAXIMIZED_BOTH
 
     private var mRotationStatus = ROTATION_LEFT_RIGHT
+    var mToolRotationStatus = ROTATION_BOTTOM_TOP
 
     private var mLogTableDialog: LogTableDialog? = null
 
@@ -314,6 +326,11 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
             mRotationStatus = prop.toInt()
         }
 
+        prop = mConfigManager.getItem(ConfigManager.ITEM_TOOL_ROTATION)
+        if (!prop.isNullOrEmpty()) {
+            mToolRotationStatus = prop.toInt()
+        }
+
         prop = mConfigManager.getItem(ConfigManager.ITEM_SHOW_LOG_STYLE)
         mShowLogComboStyle = if (!prop.isNullOrEmpty()) {
             FilterComboBox.Mode.fromInt(prop.toInt())
@@ -354,6 +371,13 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                 }
         } else {
             LogTableModel.TypeShowProcessName = LogTableModel.SHOW_PROCESS_SHOW_WITH_BGCOLOR
+        }
+
+        prop = mConfigManager.getItem(ConfigManager.ITEM_TOOL_TEST_ENABLE)
+        if (!prop.isNullOrEmpty()) {
+            mToolTestEnable = prop.toBoolean()
+        } else {
+            mToolTestEnable = false
         }
 
         createUI()
@@ -481,6 +505,11 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
             mConfigManager.setItem(ConfigManager.ITEM_LAST_DIVIDER_LOCATION, mLogSplitPane.lastDividerLocation.toString())
         }
 
+        mConfigManager.setItem(ConfigManager.ITEM_TOOL_DIVIDER_LOCATION, mToolSplitDividerLocation.toString())
+        if (mToolSplitLastDividerLocation != -1) {
+            mConfigManager.setItem(ConfigManager.ITEM_TOOL_LAST_DIVIDER_LOCATION, mToolSplitLastDividerLocation.toString())
+        }
+
 //            mProperties.put(ITEM_LANG, Strings.lang.toString())
 
         mConfigManager.saveConfig()
@@ -513,7 +542,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                 break
             }
         }
-        
+
         if (path == recentItem.mPath) {
             if (startLine == 0) {
                 val result = JOptionPane.showConfirmDialog(this, Strings.APPLY_RECENT_FILE, Strings.RECENT_FILE, JOptionPane.YES_NO_OPTION)
@@ -607,6 +636,29 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         mMenuView = JMenu(Strings.VIEW)
         mMenuView.mnemonic = KeyEvent.VK_V
         mMenuView.addMenuListener(MenuHandler())
+
+        mItemToolWindows = JMenu(Strings.TOOL_WINDOWS)
+        mItemToolWindows.addActionListener(mActionHandler)
+        mMenuView.add(mItemToolWindows)
+
+        mItemToolPanel = JCheckBoxMenuItem(Strings.PANEL)
+        mItemToolPanel.addActionListener(mActionHandler)
+        mItemToolWindows.add(mItemToolPanel)
+
+        mItemToolWindows.addSeparator()
+
+        mItemToolSelection = JCheckBoxMenuItem(Strings.TOOL_SELECTION)
+        mItemToolSelection.toolTipText = TooltipStrings.TOOL_SELECTION
+        mItemToolSelection.addActionListener(mActionHandler)
+        mItemToolWindows.add(mItemToolSelection)
+
+        mItemToolTest = JCheckBoxMenuItem("Test")
+        mItemToolTest.addActionListener(mActionHandler)
+        if (mToolTestEnable) {
+            mItemToolWindows.add(mItemToolTest)
+        }
+
+        mMenuView.addSeparator()
 
         mItemFull = JCheckBoxMenuItem(Strings.VIEW_FULL)
         mItemFull.addActionListener(mActionHandler)
@@ -703,6 +755,10 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         mItemAppearance = JMenuItem(Strings.APPEARANCE)
         mItemAppearance.addActionListener(mActionHandler)
         mMenuSettings.add(mItemAppearance)
+
+        mItemTool = JMenuItem(Strings.TOOL)
+        mItemTool.addActionListener(mActionHandler)
+        mMenuSettings.add(mItemTool)
 
         mMenuBar.add(mMenuSettings)
 
@@ -1039,6 +1095,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         if (!dividerSize.isNullOrEmpty()) {
             mLogSplitPane.dividerSize = dividerSize.toInt()
         }
+        mLogSplitPane.isOneTouchExpandable = false
 
         val logWidth = mConfigManager.getItem(ConfigManager.ITEM_LOG_VIEW_WIDTH)
         if (!logWidth.isNullOrEmpty()) {
@@ -1047,8 +1104,6 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                 LogTable.LogWidth = LogTable.MIN_LOG_WIDTH
             }
         }
-
-        mLogSplitPane.isOneTouchExpandable = false
 
         mStatusBar = JPanel(BorderLayout())
         mStatusBar.border = BorderFactory.createEmptyBorder(3, 3, 3, 3)
@@ -1307,6 +1362,91 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
 
         updateLogPanelTableBar()
 
+        mToolsPane = ToolsPane.getInstance()
+
+        check = mConfigManager.getItem(ConfigManager.ITEM_TOOL_SELECTION)
+        if (!check.isNullOrEmpty()) {
+            mItemToolSelection.state = check.toBoolean()
+        } else {
+            mItemToolSelection.state = false
+        }
+
+        if (mItemToolSelection.state) {
+            mToolsPane.addTab(ToolsPane.Companion.ToolId.TOOL_ID_SELECTION)
+        }
+
+        check = mConfigManager.getItem(ConfigManager.ITEM_TOOL_SELECTION_RANGE_PREVIOUS)
+        if (!check.isNullOrEmpty()) {
+            mToolsPane.mToolSelection.mPrevLines = check.toInt()
+        }
+
+        check = mConfigManager.getItem(ConfigManager.ITEM_TOOL_SELECTION_RANGE_NEXT)
+        if (!check.isNullOrEmpty()) {
+            mToolsPane.mToolSelection.mNextLines = check.toInt()
+        }
+
+        check = mConfigManager.getItem(ConfigManager.ITEM_TOOL_TEST)
+        if (mToolTestEnable && !check.isNullOrEmpty()) {
+            mItemToolTest.state = check.toBoolean()
+        } else {
+            mItemToolTest.state = false
+        }
+
+        if (mItemToolTest.state) {
+            mToolsPane.addTab(ToolsPane.Companion.ToolId.TOOL_ID_TEST)
+        }
+
+        check = mConfigManager.getItem(ConfigManager.ITEM_TOOL_PANEL)
+        if (!check.isNullOrEmpty()) {
+            mToolsPane.updateVisible(check.toBoolean())
+        } else {
+            mToolsPane.isVisible = false
+        }
+
+        mItemToolPanel.state = mToolsPane.isVisible
+
+        when (mToolRotationStatus) {
+            ROTATION_TOP_BOTTOM -> {
+                mToolSplitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, false, mToolsPane, mLogSplitPane)
+                mToolSplitPane.resizeWeight = SPLIT_WEIGHT
+            }
+
+            ROTATION_BOTTOM_TOP -> {
+                mToolSplitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, false, mLogSplitPane, mToolsPane)
+                mToolSplitPane.resizeWeight = 1 - SPLIT_WEIGHT
+            }
+        }
+
+        if (mToolsPane.isVisible) {
+            mToolsPane.mToolSelection.setBgColor(mFilteredLogPanel.mTable.mTableColor.mLogBG)
+            mToolSplitPane.dividerSize = mLogSplitPane.dividerSize
+        }
+        else {
+            mToolSplitPane.dividerSize = 0
+        }
+
+        divider = mConfigManager.getItem(ConfigManager.ITEM_TOOL_LAST_DIVIDER_LOCATION)
+        if (!divider.isNullOrEmpty()) {
+            mToolSplitLastDividerLocation = divider.toInt()
+            mToolSplitPane.lastDividerLocation = mToolSplitLastDividerLocation
+        }
+
+        divider = mConfigManager.getItem(ConfigManager.ITEM_TOOL_DIVIDER_LOCATION)
+        if (!divider.isNullOrEmpty() && mToolSplitLastDividerLocation != -1) {
+            mToolSplitDividerLocation = divider.toInt()
+            mToolSplitPane.dividerLocation = mToolSplitDividerLocation
+        }
+
+        mToolSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY) { evt ->
+            if (evt.propertyName == JSplitPane.DIVIDER_LOCATION_PROPERTY && mToolsPane.isVisible) {
+                Utils.printlnLog("Tool divider location = ${mToolSplitPane.dividerLocation}")
+                mToolSplitDividerLocation = mToolSplitPane.dividerLocation
+                mToolSplitLastDividerLocation = mToolSplitPane.lastDividerLocation
+            }
+        }
+
+        mToolSplitPane.isOneTouchExpandable = false
+
         check = mConfigManager.getItem(ConfigManager.ITEM_FILTER_INCREMENTAL)
         if (!check.isNullOrEmpty()) {
             mItemFilterIncremental.state = check.toBoolean()
@@ -1384,7 +1524,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         }
 
         add(mFilterPanel, BorderLayout.NORTH)
-        add(mLogSplitPane, BorderLayout.CENTER)
+        add(mToolSplitPane, BorderLayout.CENTER)
         add(mStatusBar, BorderLayout.SOUTH)
 
         registerKeyStroke()
@@ -1577,6 +1717,29 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                 mLogSplitPane.resizeWeight = 1 - SPLIT_WEIGHT
             }
         }
+    }
+
+    fun rotateToolSplitPane(rotation: Int) {
+        mToolRotationStatus = rotation
+        mToolSplitPane.remove(mLogSplitPane)
+        mToolSplitPane.remove(mToolsPane)
+
+        when (mToolRotationStatus) {
+            ROTATION_TOP_BOTTOM -> {
+                mToolSplitPane.orientation = JSplitPane.VERTICAL_SPLIT
+                mToolSplitPane.add(mToolsPane)
+                mToolSplitPane.add(mLogSplitPane)
+                mToolSplitPane.resizeWeight = SPLIT_WEIGHT
+            }
+            ROTATION_BOTTOM_TOP -> {
+                mToolSplitPane.orientation = JSplitPane.VERTICAL_SPLIT
+                mToolSplitPane.add(mLogSplitPane)
+                mToolSplitPane.add(mToolsPane)
+                mToolSplitPane.resizeWeight = 1 - SPLIT_WEIGHT
+            }
+        }
+
+        mConfigManager.saveItem(ConfigManager.ITEM_TOOL_ROTATION, mToolRotationStatus.toString())
     }
 
     private fun setBtnIconsTexts(isShowIcons: Boolean, isShowTexts: Boolean) {
@@ -2069,6 +2232,19 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         mRecentFileManager.saveList()
     }
 
+    private fun sanitizeFileName(fileName: String): String {
+        val pattern = Pattern.compile("[<>:\"/\\\\|?*]")
+        val matcher = pattern.matcher(fileName)
+
+        var newName = matcher.replaceAll("_")
+        newName = newName.trim()
+
+        if (fileName != newName) {
+            Utils.printlnLog("filename is incorrect, changed from $fileName to $newName")
+        }
+        return newName
+    }
+
     fun setSaveLogFile() {
         val dtf = DateTimeFormatter.ofPattern("yyyyMMdd_HH.mm.ss")
         var device = mDeviceCombo.selectedItem!!.toString()
@@ -2077,7 +2253,8 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
             mLogCmdManager.mPrefix = LogCmdManager.DEFAULT_PREFIX
         }
 
-        val filePath = "${mLogCmdManager.mLogSavePath}/${mLogCmdManager.mPrefix}_${device}_${dtf.format(LocalDateTime.now())}.txt"
+        val fileName = sanitizeFileName("${mLogCmdManager.mPrefix}_${device}_${dtf.format(LocalDateTime.now())}.txt")
+        val filePath = "${mLogCmdManager.mLogSavePath}/$fileName"
         var file = File(filePath)
         var idx = 1
         var filePathSaved = filePath
@@ -2214,6 +2391,36 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         mFilteredLogPanel.mTableModel.pauseFollow(pause)
     }
 
+    fun performToolsMenu(visible: Boolean, toolId: ToolsPane.Companion.ToolId) {
+        val prevVisible = mToolsPane.isVisible
+        if (visible) {
+            mToolsPane.showTab(toolId)
+        } else {
+            mToolsPane.hideTab(toolId)
+        }
+
+        if (prevVisible != mToolsPane.isVisible) {
+            if (mToolsPane.isVisible) {
+                rotateToolSplitPane(mToolRotationStatus)
+                mToolSplitPane.dividerSize = mLogSplitPane.dividerSize
+                mToolSplitPane.dividerLocation = mToolSplitDividerLocation
+                mToolSplitPane.lastDividerLocation = mToolSplitLastDividerLocation
+            }
+            else {
+                mToolSplitPane.dividerSize = 0
+                mToolSplitDividerLocation = mToolSplitPane.dividerLocation
+                mToolSplitLastDividerLocation = mToolSplitPane.lastDividerLocation
+            }
+        }
+        mToolSplitPane.revalidate()
+        mToolSplitPane.repaint()
+
+        if (prevVisible != mToolsPane.isVisible || mItemToolPanel.state != mToolsPane.isVisible) {
+            mItemToolPanel.state = mToolsPane.isVisible
+            mConfigManager.saveItem(ConfigManager.ITEM_TOOL_PANEL, mItemToolPanel.state.toString())
+        }
+    }
+
     internal inner class ActionHandler : ActionListener {
         override fun actionPerformed(p0: ActionEvent?) {
             when (p0?.source) {
@@ -2328,6 +2535,20 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                     mConfigManager.saveItem(ConfigManager.ITEM_VIEW_FULL, mItemFull.state.toString())
                 }
 
+                mItemToolPanel -> {
+                    performToolsMenu(mItemToolPanel.state, ToolsPane.Companion.ToolId.TOOL_ID_PANEL)
+                }
+
+                mItemToolSelection -> {
+                    performToolsMenu(mItemToolSelection.state, ToolsPane.Companion.ToolId.TOOL_ID_SELECTION)
+                    mConfigManager.saveItem(ConfigManager.ITEM_TOOL_SELECTION, mItemToolSelection.state.toString())
+                }
+
+                mItemToolTest -> {
+                    performToolsMenu(mItemToolTest.state, ToolsPane.Companion.ToolId.TOOL_ID_TEST)
+                    mConfigManager.saveItem(ConfigManager.ITEM_TOOL_TEST, mItemToolTest.state.toString())
+                }
+
                 mItemFullLogToNewWindow -> {
                     if (mItemFull.state) {
                         if (mItemFullLogToNewWindow.state) {
@@ -2380,6 +2601,11 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                     val appearanceSettingsDialog = AppearanceSettingsDialog(this@MainUI)
                     appearanceSettingsDialog.setLocationRelativeTo(this@MainUI)
                     appearanceSettingsDialog.isVisible = true
+                }
+                mItemTool -> {
+                    val toolSettingsDialog = ToolSettingsDialog(this@MainUI)
+                    toolSettingsDialog.setLocationRelativeTo(this@MainUI)
+                    toolSettingsDialog.isVisible = true
                 }
                 mItemAbout -> {
                     val aboutDialog = AboutDialog(this@MainUI)
@@ -2546,16 +2772,16 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         private val mActionHandler = ActionHandler()
 
         init {
-            mSelectAllItem = JMenuItem("Select All")
+            mSelectAllItem = JMenuItem(Strings.SELECT_ALL)
             mSelectAllItem.addActionListener(mActionHandler)
             add(mSelectAllItem)
-            mCopyItem = JMenuItem("Copy")
+            mCopyItem = JMenuItem(Strings.COPY)
             mCopyItem.addActionListener(mActionHandler)
             add(mCopyItem)
-            mPasteItem = JMenuItem("Paste")
+            mPasteItem = JMenuItem(Strings.PASTE)
             mPasteItem.addActionListener(mActionHandler)
             add(mPasteItem)
-            mReconnectItem = JMenuItem("Reconnect " + mDeviceCombo.selectedItem?.toString())
+            mReconnectItem = JMenuItem("${Strings.RECONNECT} " + mDeviceCombo.selectedItem?.toString())
             mReconnectItem.addActionListener(mActionHandler)
             add(mReconnectItem)
             mCombo = combo
@@ -2588,6 +2814,8 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
         var mSelectAllItem: JMenuItem
         var mCopyItem: JMenuItem
         var mPasteItem: JMenuItem
+        var mRemoveItem: JMenuItem
+        var mRemoveOthersItem: JMenuItem
         var mRemoveColorTagsItem: JMenuItem
         lateinit var mRemoveOneColorTagItem: JMenuItem
         lateinit var mAddColorTagItems: ArrayList<JMenuItem>
@@ -2611,16 +2839,24 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                     }
                 }
             }
-            mSelectAllItem = JMenuItem("Select All")
+            mSelectAllItem = JMenuItem(Strings.SELECT_ALL)
             mSelectAllItem.addActionListener(mActionHandler)
             add(mSelectAllItem)
-            mCopyItem = JMenuItem("Copy")
+            mCopyItem = JMenuItem(Strings.COPY)
             mCopyItem.addActionListener(mActionHandler)
             add(mCopyItem)
-            mPasteItem = JMenuItem("Paste")
+            mPasteItem = JMenuItem(Strings.PASTE)
             mPasteItem.addActionListener(mActionHandler)
             add(mPasteItem)
-            mRemoveColorTagsItem = JMenuItem("Remove All Color Tags")
+            addSeparator()
+            mRemoveItem = JMenuItem(Strings.REMOVE)
+            mRemoveItem.addActionListener(mActionHandler)
+            add(mRemoveItem)
+            mRemoveOthersItem = JMenuItem(Strings.REMOVE_OTHERS)
+            mRemoveOthersItem.addActionListener(mActionHandler)
+            add(mRemoveOthersItem)
+            addSeparator()
+            mRemoveColorTagsItem = JMenuItem(Strings.REMOVE_ALL_COLOR_TAGS)
             mRemoveColorTagsItem.isOpaque = true
             mRemoveColorTagsItem.foreground = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredFGs[0])
             mRemoveColorTagsItem.background = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredBGs[0])
@@ -2628,7 +2864,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
             add(mRemoveColorTagsItem)
 
             if (mCombo.mUseColorTag) {
-                mRemoveOneColorTagItem = JMenuItem("Remove Color Tag")
+                mRemoveOneColorTagItem = JMenuItem(Strings.REMOVE_COLOR_TAG)
                 mRemoveOneColorTagItem.isOpaque = true
                 mRemoveOneColorTagItem.foreground = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredFGs[0])
                 mRemoveOneColorTagItem.background = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredBGs[0])
@@ -2637,7 +2873,7 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                 mAddColorTagItems = arrayListOf()
                 for (idx in 0..8) {
                     val num = idx + 1
-                    val item = JMenuItem("Add Color Tag : #$num")
+                    val item = JMenuItem("${Strings.ADD_COLOR_TAG} : #$num")
                     item.isOpaque = true
                     item.foreground = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredFGs[num])
                     item.background = Color.decode(ColorManager.getInstance().mFilterTableColor.mStrFilteredBGs[num])
@@ -2663,6 +2899,20 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                     mPasteItem -> {
                         val editorCom = mCombo.editor?.editorComponent as JTextComponent
                         editorCom.paste()
+                    }
+                    mRemoveItem -> {
+                        val editorCom = mCombo.editor?.editorComponent as JTextComponent
+                        editorCom.replaceSelection("")
+                        if (mCombo == mShowLogCombo) {
+                            applyShowLogComboEditor()
+                        }
+                    }
+                    mRemoveOthersItem -> {
+                        val editorCom = mCombo.editor?.editorComponent as JTextComponent
+                        editorCom.text = editorCom.selectedText
+                        if (mCombo == mShowLogCombo) {
+                            applyShowLogComboEditor()
+                        }
                     }
                     mRemoveColorTagsItem -> {
                         mCombo.removeAllColorTags()
@@ -2725,9 +2975,35 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
                         }
 
                         mShowLogCombo.editor.editorComponent, mBoldLogCombo.editor.editorComponent -> {
+                            mShowLogCombo.requestFocus()
                             lateinit var combo: FilterComboBox
                             when (p0.source) {
                                 mShowLogCombo.editor.editorComponent -> {
+                                    if (mShowLogCombo.editor.editorComponent is JTextArea) {
+                                        val textArea = mShowLogCombo.editor.editorComponent as JTextArea
+                                        val offset = textArea.viewToModel(p0.point)
+                                        var needSelect = true
+                                        if (!textArea.selectedText.isNullOrEmpty()) {
+                                            if (offset >= textArea.selectionStart && offset <= textArea.selectionEnd) {
+                                                needSelect = false
+                                            }
+                                        }
+                                        if (needSelect) {
+                                            val text = textArea.text
+                                            if (offset >= 0) {
+                                                var start = offset
+                                                var end = offset
+                                                while (start > 0 && text[start - 1] != '|') {
+                                                    start--
+                                                }
+
+                                                while (end < text.length && text[end] != '|') {
+                                                    end++
+                                                }
+                                                textArea.select(start, end)
+                                            }
+                                        }
+                                    }
                                     combo = mShowLogCombo
                                 }
 
@@ -2830,7 +3106,49 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
     fun applyShowLogComboEditor() {
         mShowLogCombo.applyFilterTextEditor()
     }
-    
+
+    fun removeIncludeFilterShowLogCombo(filterRemove: String) {
+        if (filterRemove.isNotEmpty()) {
+            val text = getTextShowLogCombo()
+            if (text.isNotEmpty()) {
+                val filterList = mutableListOf<String>()
+                val filterRegex = if (mMatchCaseToggle.isSelected) {
+                    Regex("(#[0-9])?$filterRemove")
+                } else {
+                    Regex("(#[0-9])?$filterRemove", RegexOption.IGNORE_CASE)
+                }
+                val filterSplit = text.split("|")
+                var isChanged = false
+                for (str in filterSplit) {
+                    if (!filterRegex.matches(str)) {
+                        filterList.add(str)
+                    }
+                    else {
+                        isChanged = true
+                    }
+                }
+
+                if (isChanged) {
+                    val newFilter = StringBuilder()
+                    for (filter in filterList) {
+                        if (newFilter.isNotEmpty()) {
+                            newFilter.append("|")
+                        }
+                        newFilter.append(filter)
+                    }
+                    setTextShowLogCombo(newFilter.toString())
+                    applyShowLogCombo(true)
+                }
+                else {
+                    JOptionPane.showMessageDialog(this, "${Strings.NO_FILTER_MATCHING} '$filterRemove'\n(${Strings.NO_FILTER_MATCHING_2})", Strings.REMOVE_INCLUDE, JOptionPane.INFORMATION_MESSAGE)
+                }
+            }
+            else {
+                JOptionPane.showMessageDialog(this, Strings.FILTERS_ARE_EMPTY, Strings.REMOVE_INCLUDE, JOptionPane.INFORMATION_MESSAGE)
+            }
+        }
+    }
+
     fun getTextSearchCombo() : String {
         if (mSearchPanel.mSearchCombo.selectedItem == null) {
             return ""
@@ -3692,6 +4010,20 @@ class MainUI private constructor() : JFrame(), FormatManager.FormatEventListener
             override fun actionPerformed(event: ActionEvent) {
                 mFilteredLogPanel.mTableModel.clearItems()
                 repaint()
+            }
+        }
+        rootPane.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(stroke, actionMapKey)
+        rootPane.actionMap.put(actionMapKey, action)
+
+        stroke = KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK)
+        actionMapKey = javaClass.name + ":PREVIOUS_FILTER"
+        action = object : AbstractAction() {
+            override fun actionPerformed(event: ActionEvent) {
+                if (mShowLogCombo.itemCount > 1) {
+                    val filter = mShowLogCombo.getItemAt(1)
+                    setTextShowLogCombo(filter)
+                    applyShowLogCombo(true)
+                }
             }
         }
         rootPane.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(stroke, actionMapKey)
